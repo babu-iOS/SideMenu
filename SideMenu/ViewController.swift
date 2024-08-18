@@ -5,89 +5,112 @@
 import UIKit
 
 class ViewController: UIViewController {
-
-    //MARK: - Outlets
-    @IBOutlet weak var scrollView:UIScrollView!
-    @IBOutlet weak var mainContainer:UIView!
-    @IBOutlet weak var sideMenuView:UIView!
-    @IBOutlet weak var buttonBG:UIButton!
     
+    // MARK: - Outlets
+    @IBOutlet weak var scrollView: UIScrollView!
+    @IBOutlet weak var mainContainer: UIView!
+    @IBOutlet weak var buttonBG: UIButton!
     
-    let menuWidth:CGFloat = 260
-    var screenWidth:CGFloat = 0.0
-    var screenCenter:CGFloat = 0.0
-    var screenHeight:CGFloat = 0.0
-    var isOverTheView = true //make false to open along with main view
+    // MARK: - Properties
+    private let menuWidth: CGFloat = 260
+    private var screenWidth: CGFloat = 0.0
+    private var screenCenter: CGFloat = 0.0
+    private let isOverTheView = false // Set to true to have the main view move with the menu
+    private let isDragEnabled = true // Boolean to enable or disable dragging
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        initialSetup()
+        setupInitialValues()
+        configurePanGesture()
     }
-
-    func initialSetup(){
+    
+    // MARK: - Initial Setup
+    private func setupInitialValues() {
         DispatchQueue.main.async {
             self.buttonBG.alpha = 0
             self.screenWidth = UIScreen.main.bounds.size.width
-            self.screenHeight = UIScreen.main.bounds.size.width
-            self.screenCenter = self.screenWidth/2.0
+            self.screenCenter = self.screenWidth / 2.0
             self.scrollView.contentOffset = CGPoint(x: self.menuWidth, y: 0)
         }
     }
-    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-        if let vc = segue.destination as? SideMenuViewController{
-            vc.delegate = self
-        }
-    }
-    //MARK: button Actions
-    @IBAction func openSideMenu(){ // Make this connection from First Responder
-        UIView.animate(withDuration: 1, delay: 0.0, usingSpringWithDamping: 1.0, initialSpringVelocity: 0.10, options: UIView.AnimationOptions.curveEaseInOut, animations: {
-            self.scrollView.contentOffset = CGPoint(x: 0, y: 0)
-        }) { _ in
-           
-        }
+    
+    // MARK: - Animate Menu
+    private func toggleMenu(toOffset offset: CGFloat) {
+        UIView.animate(withDuration: 1,delay: 0.0,
+                       usingSpringWithDamping: offset == 0 ? 0.85 : 1.0,
+                       initialSpringVelocity: offset == 0 ? 0.10 : 0.15,
+                       options: .curveEaseInOut,
+                       animations: {
+            self.scrollView.contentOffset = CGPoint(x: offset, y: 0)
+        }) { _ in }
     }
     
-    @IBAction func transperentButtonAction(){
-        closeMenu()
+    // MARK: - Button Actions
+    @IBAction func openSideMenu() { // connect as a first responder in child Vc
+        toggleMenu(toOffset: 0)
     }
-    
-    private func closeMenu(){
-        UIView.animate(withDuration: 1, delay: 0.0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0.15, options: UIView.AnimationOptions.curveEaseInOut, animations: {
-            self.scrollView.contentOffset = CGPoint(x: self.menuWidth, y: 0)
-        }) { _ in
-            
-        }
+    @IBAction func transparentButtonAction() {
+        toggleMenu(toOffset: menuWidth)
     }
 }
 
-//MARK: - ScrollViewDelegate
-extension ViewController:UIScrollViewDelegate{
+// MARK: - UIScrollViewDelegate
+extension ViewController: UIScrollViewDelegate {
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        let offsetX = scrollView.contentOffset.x
         
-        let scrollOffset = scrollView.contentOffset
-        let offsetX = scrollOffset.x
-        if isOverTheView{
-            mainContainer.center = CGPoint(x: self.screenCenter-(menuWidth - offsetX), y: mainContainer.center.y)
+        if isOverTheView {
+            mainContainer.center.x = screenCenter - (menuWidth - offsetX)
         }
-        
-        let maxAlpha: CGFloat = 0.5
-        let minAlpha: CGFloat = 0.0
-        
-        let alpha = maxAlpha - (maxAlpha - minAlpha) * (offsetX / menuWidth)
+        let alpha = max(0.0, 0.5 - (0.5 * (offsetX / menuWidth)))
         buttonBG.alpha = alpha
-
     }
 }
+
+// MARK: - Pan Gesture Handling
+extension ViewController {
+    private func configurePanGesture() {
+        let panGesture = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        view.addGestureRecognizer(panGesture)
+    }
+    
+    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+        guard isDragEnabled else { return }
+        
+        let translation = gesture.translation(in: view)
+        let velocity = gesture.velocity(in: view).x
+        let currentOffsetX = scrollView.contentOffset.x
+        
+        switch gesture.state {
+        case .changed:
+            let newOffsetX = max(min(currentOffsetX - translation.x, menuWidth), 0)
+            scrollView.contentOffset = CGPoint(x: newOffsetX, y: 0)
+            gesture.setTranslation(.zero, in: view)
+            
+        case .ended:
+            let finalOffsetX = scrollView.contentOffset.x
+            let shouldClose = finalOffsetX > menuWidth / 2 || velocity < -100
+            let targetOffset: CGFloat = shouldClose ? menuWidth : 0
+            
+            toggleMenu(toOffset: targetOffset)
+            
+        default:
+            break
+        }
+    }
+}
+
+// MARK: - SideMenuVCDelegate
 extension ViewController: SideMenuVCDelegate {
     func didTapAtMenuItems(index: Int) {
-        closeMenu()
+        toggleMenu(toOffset: menuWidth)
         switch index {
         case 0:
-            let vc = storyboard?.instantiateViewController(withIdentifier: "ProfileViewController") as! ProfileViewController
-            self.navigationController?.pushViewController(vc, animated: true)
-            break
+            if let vc = storyboard?.instantiateViewController(withIdentifier: "ProfileViewController") as? ProfileViewController {
+                navigationController?.pushViewController(vc, animated: true)
+            }
         case 1:
-            //Nav to specific vc
+            // Handle navigation for index 1
             break
         default:
             break
